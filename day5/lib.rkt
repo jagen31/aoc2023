@@ -3,6 +3,8 @@
 (require art (for-syntax syntax/parse racket/function racket/match))
 (provide (all-defined-out))
 
+(begin-for-syntax (require rackunit))
+
 (define-coordinate (type [t]))
 (define-hom-merge-rule type (λ (l r _ __ ___) (or r l)))
 (define-hom-within?-rule type (λ (l r _ __ ___) #t))
@@ -13,7 +15,13 @@
 
 (define-coordinate (-> [l r]))
 (define-hom-merge-rule -> (λ (l r _ __ ___) (or r l)))
-(define-hom-within?-rule -> (λ (l r _ __ ___) #t))
+(define-hom-within?-rule ->
+  (λ (l r _ __ ___)
+    (let/ec break
+    (unless r (break #t))
+    (unless l (break #f))
+    (syntax-parse #`(#,l #,r)
+      [((_ l r) (__ l2 r2)) (and (free-identifier=? #'l #'l2) (free-identifier=? #'r #'r2))]))))
 
 (define-for-syntax (expr-input-type expr)
   (syntax-parse (context-ref (get-id-ctxt expr) #'->)
@@ -40,10 +48,7 @@
   (λ (stx)
     (syntax-parse stx
       [(_ ([l:id r:id] (end:number start:number range:number) ...) ...)
-       #:with ((max ...) ...) (for/list ([s (syntax->list #'((start ...) ...))] [r (syntax->list #'((range ...) ...))])
-                                (for/list ([s2 (syntax->list s)] [r2 (syntax->list r)])
-                                  (+ (syntax-e s2) (syntax-e r2))))
-       (qq-art stx (@ () (@ [(-> l r)] (interval-map start max end) ...) ...))])))
+       (qq-art stx (@ () (@ [(-> l r)] (interval-map start range end) ...) ...))])))
 
 (define-mapping-rewriter (convert [(: thing number)])
   (λ (stx thing)
@@ -55,10 +60,10 @@
           (define map-result
             (for/or ([m maps])
               (syntax-parse m
-                [(_ mi mx o)
+                [(_ mi rg o)
                  
-                 (match-define (list min max out num) (map syntax-e (list #'mi #'mx #'o #'n)))
-                 (and (>= num min) (< num max) (qq-art thing (@ [(type output)] (number #,(+ out (- num min))))))])))
+                 (match-define (list min range out num) (map syntax-e (list #'mi #'rg #'o #'n)))
+                 (and (>= num min) (< num (+ min range)) (qq-art thing (@ [(type output)] (number #,(+ out (- num min))))))])))
           (or map-result (qq-art thing (@ [(type output)] (number n))))])])))
                    
 
@@ -84,7 +89,7 @@
    (convert temperature humidity)
    (convert humidity location)])
 
-(perform (quote-performer)
+#;(perform (quote-performer)
   (test-converters)
   (@ [(type seed)] (test-seeds))
   (convert-all)
@@ -152,21 +157,160 @@
 
 ;; PART 2 BEGINS HERE
 
-#;(interpretation+ day5
-  [input-seed-ranges (seed-ranges 1514493331 295250933 3793791524 105394212 828589016
-                        654882197 658370118 49359719 4055197159 59237418 314462259 268880047 2249227634 74967914 2370414906 38444198 3291001718 85800943 2102534948 5923540)])
+(define-art-object (seed-range [l r]))
 
+(interpretation+ day5
+  [test-seed-ranges (seed-ranges [79 14] [55 13])]
+  [input-seed-ranges
+   (seed-ranges [1514493331 295250933] [3793791524 105394212] [828589016 654882197] [658370118 49359719]
+                [4055197159 59237418] [314462259 268880047] [2249227634 74967914] [2370414906 38444198]
+                [3291001718 85800943] [2102534948 5923540])])
 
-#;(define-for-syntax (intersect-ranges left right)
-  (for/fold ([acc '()])
-            ([l left])
-    (match l
-      [(cons start end)
-       (for/fold ([acc2 '()])
-                 ([r right])
-         (match r
-           [(cons start2 end2)
-            (define low (max start start2))
-            (define hi (max end end2))
-            (if (< hi low) acc2 (cons (cons low hi) acc2))]))])))
+(define-art-rewriter seed-ranges
+  (syntax-parser
+    [(_ [l r] ...)
+     (qq-art this-syntax (ix-- (seed-range l r) ...))]))
+     
 
+(define-for-syntax (do-compose-interval-maps l r)
+  (match* (l r)
+    [((list minl rangel outl) (list minr ranger outr))
+     (define maxl (+ minl rangel))
+     (define maxr (+ minr ranger))
+     (define minl-out outl)
+     (define maxl-out (+ rangel outl))
+     (define intersectl (max minl-out minr))
+     (define intersectr (min maxl-out maxr))
+     (define offset (- intersectl minr))
+     (and (> intersectr intersectl) (list (- intersectl (- outl minl)) (- intersectr intersectl) (+ outr offset)))]))
+
+(begin-for-syntax
+  (check-equal? (do-compose-interval-maps '(0 5 10) '(3 8 0)) '(0 1 7))
+  (check-equal? (do-compose-interval-maps '(3 10 0) '(1 5 10)) '(4 5 10))
+  (check-equal? (do-compose-interval-maps '(0 5 10) '(9 2 4)) '(0 1 5))
+  (check-equal? (do-compose-interval-maps '(0 50 0) '(15 37 0)) '(15 35 0))
+  (check-equal? (do-compose-interval-maps '(50 48 52) '(52 2 37)) '(50 2 37))
+  (check-equal? (do-compose-interval-maps '(98 2 50) '(15 37 0)) '(98 2 35))
+  )
+
+(define-for-syntax (do-make-total imaps)
+  
+  (define sorted-imaps (sort imaps < #:key car))
+  (println sorted-imaps)
+  (for/fold ([acc '()] [prev 0] #:result (reverse acc))
+            ([imap (append sorted-imaps (list (list +inf.0 0 +inf.0)))])
+    (match imap
+      [(list min range out)
+       (println min)
+       (println prev)
+       (define max (+ min range))
+       (values (if (= prev min) acc (cons (list prev (- min prev) prev) acc)) max)])))
+
+(begin-for-syntax
+  (check-equal? (do-make-total '((5 10 15) (15 5 10) (22 1 22))) '((0 5 0) (20 2 20) (23 +inf.0 23)))
+  (check-equal? (do-make-total '((5 10 15) (15 5 10) (22 1 22))) '((0 5 0) (20 2 20) (23 +inf.0 23)))
+  (check-equal? (do-make-total '((15 37 0) (52 2 37) (0 15 39))) '((54 +inf.0 54)))
+  )
+
+;; THEOREM forall spans s, interval map sets m1, m2 . the composition of m1 and m2 is total over s
+;; iff m1 and m2 are total over s
+
+(define-for-syntax (do-compose-interval-maps* ls rs)
+  (for*/fold ([acc '()] #:result (reverse acc))
+             ([l ls] [r rs])
+    (define result (do-compose-interval-maps l r))
+    (if result (cons result acc) acc)))
+
+(begin-for-syntax
+  (check-equal? (do-compose-interval-maps* '((98 2 50) (0 50 0) (50 48 52) (100 +inf.0 100)) '((54 +inf.0 54)))
+                '((98 2 50) (15 37 0) (50 2 37) (52 2 54))))
+
+(define-art-rewriter totalize-map
+  (syntax-parser
+    [(_ l:id r:id)
+     #:do [
+     (define maps (context-ref*/surrounding (current-ctxt) (list #'(-> l r)) #'interval-map))
+     (println maps)
+     (define-values (lo hi)
+       (for/fold ([lo #f] [hi #f])
+                 ([range (context-ref* (current-ctxt) #'seed-range)])
+         (define-values (lo* hi*) (syntax-parse range [(_ low off) (values (syntax-e #'low) (+ (syntax-e #'low) (syntax-e #'off)))]))
+         (values (if lo (min lo lo*) lo*) (if hi (max hi hi*) hi*))))
+     (define maps* (for/list ([map- maps]) (syntax-parse map- [(_ min range out) (map syntax-e (list #'min #'range #'out))])))
+     (define new-maps (do-make-total maps*))
+     ]
+     #:with (result ...)
+       (for/list ([new-map new-maps])
+         (qq-art/no-context this-syntax (@ [(-> l r)] (interval-map #,@new-map))))
+     #'(@ () result ...)]))
+
+(define-art-rewriter compose-maps
+  (syntax-parser
+    [(_ [l1:id r1:id] [l2:id r2:id])
+     #:do[
+     (println #'l1)
+     (println #'r1)
+     (define maps1 (context-ref*/surrounding (current-ctxt) (list #'(-> l1 r1)) #'interval-map))
+     (define maps2 (context-ref*/surrounding (current-ctxt) (list #'(-> l2 r2)) #'interval-map))
+     (println maps1)
+     (println maps2)
+     (define maps1* (for/list ([m maps1]) (syntax-parse m [(_ mi mx off) (map syntax-e (list #'mi #'mx #'off))])))
+     (define maps2* (for/list ([m maps2]) (syntax-parse m [(_ mi mx off) (map syntax-e (list #'mi #'mx #'off))])))
+     (define composed (do-compose-interval-maps* maps1* maps2*))
+     (println composed)
+     ]
+     #:with (result ...)
+       (for/list ([m composed]) (qq-art/no-context this-syntax (@ [(-> l1 r2)] (interval-map #,@m))))
+
+     #`(@ () #,@(map delete-expr maps1) #,@(map delete-expr maps2) result ...)]))
+     
+
+(define-art-rewriter totalize-maps
+  (syntax-parser
+    [(_ name:id ...)
+     #:do [(define names (syntax->list #'(name ...)))]
+     #:with (result ...)
+       (for/list ([n1 names] [n2 (cdr names)])
+         (qq-art n1 (totalize-map #,n1 #,n2)))
+     #'(@ () result ...)]))
+
+(define-art-rewriter compose-maps*
+  (syntax-parser
+    [(_ name:id ...)
+     #:do [(define names (syntax->list #'(name ...)))]
+     #:with fstname (car names)
+     #:with (result ...)
+       (for/list ([n1 (cdr names)] [n2 (cddr names)])
+         (qq-art n1 (compose-maps [fstname #,n1] [#,n1 #,n2])))
+     #'(@ () result ...)]))
+
+(define-art-rewriter seed-ranges->seeds
+  (syntax-parser
+    [_
+     #:do [
+     (define ranges (context-ref* (current-ctxt) #'seed-range))
+     (define maps (context-ref*/surrounding (current-ctxt) (list #'(type seed)) #'interval-map))
+     ]
+     #:with (result ...)
+     (for/fold ([acc '()])
+               ([map maps])
+       (define representative
+         (for/or ([r ranges])
+           (syntax-parse #`(#,map #,r)
+             [((_ map-lo* map-range* _) (__ lo* off))
+              (define-values (lo hi map-lo map-hi) (values (syntax-e #'lo*) (+ (syntax-e #'lo*) (syntax-e #'off)) (syntax-e #'map-lo*) (+ (syntax-e #'map-lo*) (syntax-e #'map-range*))))
+              (define intersectl (max lo map-lo))
+              (define intersectr (min hi map-hi))
+              (and (>= intersectr intersectl) (list intersectl intersectr))])))
+       (if representative (append representative acc) acc))
+     (qq-art/no-context this-syntax (numbers result ...))]))
+
+(perform (quote-performer)
+  (test-seed-ranges)
+  (test-converters)
+  (interpret day5)
+  (totalize-maps seed soil fertilizer water light temperature humidity location)
+  (compose-maps* seed soil fertilizer water light temperature humidity location)
+  (seed-ranges->seeds)
+  (convert seed location)
+  (run-apl (reduce apl:min *ctxt*)))
