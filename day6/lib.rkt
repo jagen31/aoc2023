@@ -12,3 +12,5 @@
 ; x = k/2 +/- sqrt(-min + (k/2) ^ 2)
 
 (calculate-race-range 71530 940200)
+
+(calculate-race-range 46857582 2.081412126e14)

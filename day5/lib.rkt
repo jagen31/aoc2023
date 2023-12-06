@@ -196,13 +196,10 @@
 (define-for-syntax (do-make-total imaps)
   
   (define sorted-imaps (sort imaps < #:key car))
-  (println sorted-imaps)
   (for/fold ([acc '()] [prev 0] #:result (reverse acc))
             ([imap (append sorted-imaps (list (list +inf.0 0 +inf.0)))])
     (match imap
       [(list min range out)
-       (println min)
-       (println prev)
        (define max (+ min range))
        (values (if (= prev min) acc (cons (list prev (- min prev) prev) acc)) max)])))
 
@@ -230,7 +227,6 @@
     [(_ l:id r:id)
      #:do [
      (define maps (context-ref*/surrounding (current-ctxt) (list #'(-> l r)) #'interval-map))
-     (println maps)
      (define-values (lo hi)
        (for/fold ([lo #f] [hi #f])
                  ([range (context-ref* (current-ctxt) #'seed-range)])
@@ -248,16 +244,11 @@
   (syntax-parser
     [(_ [l1:id r1:id] [l2:id r2:id])
      #:do[
-     (println #'l1)
-     (println #'r1)
      (define maps1 (context-ref*/surrounding (current-ctxt) (list #'(-> l1 r1)) #'interval-map))
      (define maps2 (context-ref*/surrounding (current-ctxt) (list #'(-> l2 r2)) #'interval-map))
-     (println maps1)
-     (println maps2)
      (define maps1* (for/list ([m maps1]) (syntax-parse m [(_ mi mx off) (map syntax-e (list #'mi #'mx #'off))])))
      (define maps2* (for/list ([m maps2]) (syntax-parse m [(_ mi mx off) (map syntax-e (list #'mi #'mx #'off))])))
      (define composed (do-compose-interval-maps* maps1* maps2*))
-     (println composed)
      ]
      #:with (result ...)
        (for/list ([m composed]) (qq-art/no-context this-syntax (@ [(-> l1 r2)] (interval-map #,@m))))
