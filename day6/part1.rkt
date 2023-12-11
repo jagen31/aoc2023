@@ -1,6 +1,6 @@
 #lang racket
 
-(require art)
+(require art art/sequence/lib art/sequence/ravel)
 ;; in←2 4⍴46 85 75 82 208 1412 1257 1410
 ;; ×/{+/((⍳⍺)×⍺-⍳⍺)>⍵}/[1]in
 

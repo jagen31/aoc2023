@@ -1,6 +1,6 @@
 #lang racket
 
-(define file (open-input-file "test.txt"))
+(define file (open-input-file "input.txt"))
 
 (define games 
   (string-join

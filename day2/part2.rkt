@@ -1,8 +1,8 @@
 #lang racket
 
-(require art "lib.rkt")
+(require art art/sequence/lib art/sequence/ravel "lib.rkt")
 
-(perform (draw-seq-performer [800 400] [number-drawer])
+(perform #;(draw-seq-performer [800 400] [number-drawer]) (quote-performer)
   (input-data)
   (interpret day2)
   (translate-cube-game red green blue)

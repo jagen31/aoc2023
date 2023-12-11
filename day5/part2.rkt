@@ -1,6 +1,6 @@
 #lang racket
 
-(require art "lib.rkt")
+(require art art/sequence/lib art/sequence/ravel "lib.rkt")
 
 (perform (quote-performer)
   (input-seed-ranges)
@@ -10,4 +10,5 @@
   (compose-maps* seed soil fertilizer water light temperature humidity location)
   (seed-ranges->seeds)
   (convert seed location)
+  (delete interval-map seed-range)
   (run-apl (reduce apl:min *ctxt*)))

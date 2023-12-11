@@ -1,6 +1,6 @@
 #lang racket
 
-(require art (for-syntax syntax/parse racket/function racket/match))
+(require art art/sequence/lib art/sequence/ravel (for-syntax syntax/parse racket/function racket/match))
 (provide (all-defined-out))
 
 (begin-for-syntax (require rackunit))
@@ -11,7 +11,7 @@
 
 (define-for-syntax (expr-type expr)
   (syntax-parse (context-ref (get-id-ctxt expr) #'type)
-    [({~datum type} t:id) #'t]))
+    [({~literal type} t:id) #'t]))
 
 (define-coordinate (-> [l r]))
 (define-hom-merge-rule -> (λ (l r _ __ ___) (or r l)))
@@ -25,11 +25,11 @@
 
 (define-for-syntax (expr-input-type expr)
   (syntax-parse (context-ref (get-id-ctxt expr) #'->)
-    [({~datum ->} l:id _) #'l]))
+    [({~literal ->} l:id _) #'l]))
 
 (define-for-syntax (expr-output-type expr)
   (syntax-parse (context-ref (get-id-ctxt expr) #'->)
-    [({~datum ->} _ r:id) #'r]))
+    [({~literal ->} _ r:id) #'r]))
 
 (define-for-syntax (do-type-within-arrow l r)
   (let/ec break
@@ -89,11 +89,13 @@
    (convert temperature humidity)
    (convert humidity location)])
 
-#;(perform (quote-performer)
+(perform (quote-performer)
   (test-converters)
   (@ [(type seed)] (test-seeds))
   (convert-all)
   (interpret day5)
+  (debug-perform (quote-performer))
+  (delete interval-map)
   (run-apl (reduce apl:min *ctxt*)))
 
 (interpretation+ day5
@@ -218,7 +220,7 @@
     (define result (do-compose-interval-maps l r))
     (if result (cons result acc) acc)))
 
-(begin-for-syntax
+#;(begin-for-syntax
   (check-equal? (do-compose-interval-maps* '((98 2 50) (0 50 0) (50 48 52) (100 +inf.0 100)) '((54 +inf.0 54)))
                 '((98 2 50) (15 37 0) (50 2 37) (52 2 54))))
 
@@ -237,7 +239,7 @@
      ]
      #:with (result ...)
        (for/list ([new-map new-maps])
-         (qq-art/no-context this-syntax (@ [(-> l r)] (interval-map #,@new-map))))
+         (quasisyntax/loc this-syntax (@ [(-> l r)] (interval-map #,@new-map))))
      #'(@ () result ...)]))
 
 (define-art-rewriter compose-maps
@@ -251,7 +253,7 @@
      (define composed (do-compose-interval-maps* maps1* maps2*))
      ]
      #:with (result ...)
-       (for/list ([m composed]) (qq-art/no-context this-syntax (@ [(-> l1 r2)] (interval-map #,@m))))
+       (for/list ([m composed]) (quasisyntax/loc this-syntax (@ [(-> l1 r2)] (interval-map #,@m))))
 
      #`(@ () #,@(map delete-expr maps1) #,@(map delete-expr maps2) result ...)]))
      
@@ -294,7 +296,7 @@
               (define intersectr (min hi map-hi))
               (and (>= intersectr intersectl) (list intersectl intersectr))])))
        (if representative (append representative acc) acc))
-     (qq-art/no-context this-syntax (numbers result ...))]))
+     (quasisyntax/loc this-syntax (numbers result ...))]))
 
 (perform (quote-performer)
   (test-seed-ranges)
@@ -304,4 +306,6 @@
   (compose-maps* seed soil fertilizer water light temperature humidity location)
   (seed-ranges->seeds)
   (convert seed location)
+  (debug-perform (quote-performer))
+  (delete interval-map seed-range)
   (run-apl (reduce apl:min *ctxt*)))

@@ -1,6 +1,6 @@
 #lang racket
 
-(require art (for-syntax racket/list racket/match racket/string racket/format syntax/parse))
+(require art art/sequence/lib art/sequence/ravel (for-syntax racket/list racket/match racket/string racket/format syntax/parse))
 
 (provide (all-defined-out))
 
@@ -10,9 +10,6 @@
 
 ;; text
 (define-art-object (text [str]))
-
-;; a number
-(define-art-object (number [n]))
 
 ;; only keep the first and last from each line
 (define-mapping-rewriter (first-and-last [(: t text)])
@@ -34,14 +31,12 @@
 
 (define-art-realizer sum-performer
   (λ (stx)
-    (syntax-parse stx
-      [(_ expr ...)
-       (define sum
-         (for/sum ([e (syntax->list #'(expr ...))])
-           (syntax-parse e
-             [({~datum number} n:number) (syntax-e #'n)]
-             [_ 0])))
-       #`#,sum])))
+    (define sum
+      (for/sum ([e (current-ctxt)])
+        (syntax-parse e
+          [({~literal number} n:number) (syntax-e #'n)]
+          [_ 0])))
+    #`#,sum))
 
 (module+ test
   

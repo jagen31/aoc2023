@@ -1,6 +1,6 @@
 #lang racket
 
-(require art 2htdp/image (for-syntax syntax/parse syntax/id-table racket/list))
+(require art art/sequence/lib art/sequence/ravel 2htdp/image (for-syntax syntax/parse syntax/id-table racket/list))
 
 (provide (all-defined-out))
 
@@ -8,13 +8,13 @@
   (λ (stx ctxt)
     (syntax-parse stx
       [(head:id expr ...)
-       (compile-rewrite-exprs (list (qq-art/no-context stx (@ () expr ...))) '())])))
+       (compile-rewrite-exprs (list (quasisyntax/loc stx (@ () expr ...))) '())])))
 
 (define-art-embedding (cube-round [blocks])
   (λ (stx ctxt)
     (syntax-parse stx
       [(head:id expr ...)
-       (compile-rewrite-exprs (list (qq-art/no-context stx (@ () expr ...))) '())])))
+       (compile-rewrite-exprs (list (quasisyntax/loc stx (@ () expr ...))) '())])))
 
 (define-coordinate (color [c]))
 (define-hom-merge-rule color (λ (l r _ __ ___) (or r l)))
@@ -43,7 +43,8 @@
          (syntax-parse round
            [(_ expr ...)
             (define expr-by-color (make-free-id-table))
-            (for ([e (syntax->list #'(expr ...))]) (free-id-table-set! expr-by-color (expr-color e) (syntax-parse e [({~datum blocks} n) (qq-art e (number n))])))
+            (for ([e (syntax->list #'(expr ...))])
+              (free-id-table-set! expr-by-color (expr-color e) (syntax-parse e [({~datum blocks} n) (qq-art e (number n))])))
             (qq-art round (seq #,@(for/list ([co colors] [i (in-naturals)])
               (define e (free-id-table-ref expr-by-color co (λ () #f)))
               (if e (qq-art e (ix@ #,i #,e)) (qq-art stx (@ [(index #,i) (color #,co)] (number 0)))))))])))
